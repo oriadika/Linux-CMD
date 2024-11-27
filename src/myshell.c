@@ -157,7 +157,8 @@ void execute(cmdLine *cmdLine)
     // Child Process
     if (pid == 0)
     {
-
+        //Debug Checker
+        
         // Check if there is an input redirection
         if (cmdLine->inputRedirect)
         {
