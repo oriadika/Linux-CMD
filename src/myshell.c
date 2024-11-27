@@ -18,7 +18,7 @@ int debug_mode = 0;
 
 // Function Declaration
 void execute(cmdLine *cmdLine);
-void debugSearch(int argc, char **argv);
+int setDebugMode(char *argv);
 int stoierr(char *str);
 
 // Function Definition
@@ -218,7 +218,7 @@ void execute(cmdLine *cmdLine)
 }
 
 // Debug Mode Function - Looking for -d or -D
-int setDebugMode(const char *argv)
+int setDebugMode(char *argv)
 {
     if (strcmp(argv, "-D") == 0 || strcmp(argv, "-d") == 0)
         ++debug_mode;
