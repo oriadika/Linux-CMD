@@ -12,13 +12,26 @@
 
 #include "LineParser.h" //As Said in the Instruction
 
+// Constants
 #define Max_String 2048
+int debug_mode = 0;
 
+// Function Declaration
+void execute(cmdLine *cmdLine);
+void debugSearch(int argc, char **argv);
+int stoierr(char *str);
+
+// Function Definition
+// Main Function
 int main(int argc, char **argv)
 {
 
     char cwd[PATH_MAX];
     char input[Max_String]; // Buffer
+
+    for (int i = 1; i < argc; i++)
+        setDebugMode(argv[i]);
+    
 
     while (1)
     {
@@ -27,7 +40,7 @@ int main(int argc, char **argv)
             perror("getcwd failed\n");
             break;
         }
-        
+
         printf("cwd: %s", cwd);
 
         if (fgets(input, sizeof(input), stdin) == NULL)
@@ -36,6 +49,7 @@ int main(int argc, char **argv)
             break;
         }
 
+        // Parse the input
         cmdLine *cmdLine = parseCmdLines(input);
 
         if (cmdLine == NULL)
@@ -43,7 +57,7 @@ int main(int argc, char **argv)
             if (feof(stdin))
                 exit(0);
 
-            fprintf(stderr, "Error command that gets NULL\n");
+            perror("Error command that gets NULL");
             continue;
         }
 
@@ -58,7 +72,6 @@ int main(int argc, char **argv)
         {
             freeCmdLines(cmdLine);
             exit(0);
-            break;
         }
 
         if (strcmp(cmdLine->arguments[0], "cd") == 0)
@@ -72,12 +85,63 @@ int main(int argc, char **argv)
             continue;
         }
 
-        else if (strcmp())
+
+        // Alarm Command
+        else if (strcmp(cmdLine->arguments[0], "alarm") == 0)
+        {
+            // Check if the command has 2 arguments, if not print an error message and continue
+            if(cmdLine->argCount == 2)
+            {
+                int processID = stoierr(cmdLine->arguments[1]);
+
+                if(processID != -1){
+                    kill(processID, SIGCONT); // Send the signal to the process
+                }
+            }
+
+            else
+            {
+                fprintf(stderr, "Error in the number of arguments\n");
+            }
+        }
+
+        // Blast Command
+        else if(strcmp(cmdLine->arguments[0], "blast") == 0){
+
+            // Check if the command has 2 arguments, if not print an error message and continue
+            if(cmdLine->argCount == 2)
+            {
+                int processID = stoierr(cmdLine->arguments[1]);
+
+                if(processID != -1){
+                    kill(processID, SIGINT); // Send the signal to the process
+                }
+            }
+
+            else
+            {
+                fprintf(stderr, "Error in the number of arguments\n");
+            }
+
+        }
+
+        // Execute the command
+        else
+        {   
+            
+            execute(cmdLine);
+            // Free the memory
+            freeCmdLines(cmdLine);
+            cmdLine = NULL;
+        }
+
+
     }
 
     return 0;
 }
 
+// Execute the command
 void execute(cmdLine *cmdLine)
 {
     int temp, stat_loc;
@@ -122,7 +186,7 @@ void execute(cmdLine *cmdLine)
             }
         }
 
-         // Check if the command is executable
+        // Check if the command is executable
         if (execv(cmdLine->arguments[0], cmdLine->arguments) == -1)
         {
             perror("Error executing command");
@@ -144,4 +208,28 @@ void execute(cmdLine *cmdLine)
             }
         }
     }
+}
+
+// Debug Mode Function - Looking for -d or -D
+void setDebugMode(const char *argv)
+{
+    if (strcmp(argv, "-D") == 0 || strcmp(argv, "-d") == 0)
+        debug_mode = 1;
+}
+
+// Convert String to Integer
+int stoierr(char *str)
+{
+    int val;
+    // Convert the string to integer and entering him into val
+    sscanf(str, "%d", &val);
+
+    // Check if the conversion was successful, if not print an error message and exit
+    if (val == 0)
+    {
+        fprintf(stderr, "Error in converting string to integer\n");
+        exit(EXIT_FAILURE); // return -1;
+    }
+
+    return val;
 }
