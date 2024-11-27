@@ -30,7 +30,9 @@ int main(int argc, char **argv)
     char input[Max_String]; // Buffer
 
     for (int i = 1; i < argc; i++)
-        setDebugMode(argv[i]);
+        if (setDebugMode(argv[i]))
+            break;
+    
     
 
     while (1)
@@ -85,16 +87,16 @@ int main(int argc, char **argv)
             continue;
         }
 
-
         // Alarm Command
         else if (strcmp(cmdLine->arguments[0], "alarm") == 0)
         {
             // Check if the command has 2 arguments, if not print an error message and continue
-            if(cmdLine->argCount == 2)
+            if (cmdLine->argCount == 2)
             {
                 int processID = stoierr(cmdLine->arguments[1]);
 
-                if(processID != -1){
+                if (processID != -1)
+                {
                     kill(processID, SIGCONT); // Send the signal to the process
                 }
             }
@@ -106,14 +108,16 @@ int main(int argc, char **argv)
         }
 
         // Blast Command
-        else if(strcmp(cmdLine->arguments[0], "blast") == 0){
+        else if (strcmp(cmdLine->arguments[0], "blast") == 0)
+        {
 
             // Check if the command has 2 arguments, if not print an error message and continue
-            if(cmdLine->argCount == 2)
+            if (cmdLine->argCount == 2)
             {
                 int processID = stoierr(cmdLine->arguments[1]);
 
-                if(processID != -1){
+                if (processID != -1)
+                {
                     kill(processID, SIGINT); // Send the signal to the process
                 }
             }
@@ -122,20 +126,17 @@ int main(int argc, char **argv)
             {
                 fprintf(stderr, "Error in the number of arguments\n");
             }
-
         }
 
         // Execute the command
         else
-        {   
-            
+        {
+
             execute(cmdLine);
             // Free the memory
             freeCmdLines(cmdLine);
             cmdLine = NULL;
         }
-
-
     }
 
     return 0;
@@ -145,9 +146,9 @@ int main(int argc, char **argv)
 void execute(cmdLine *cmdLine)
 {
     int temp, stat_loc;
-    int pid = fork();
+    int ProcessID = fork();
 
-    if (pid == -1)
+    if (ProcessID == -1)
     {
         perror("Error in Forking\n");
         freeCmdLines(cmdLine);
@@ -155,10 +156,15 @@ void execute(cmdLine *cmdLine)
     }
 
     // Child Process
-    if (pid == 0)
+    if (ProcessID == 0)
     {
-        //Debug Checker
-        
+        // Debug Checker
+        if (debug_mode)
+        {
+            fprintf(stderr, "PID: %d\n  Executing Command: %s\n\n", ProcessID, cmdLine->arguments[0]);
+        }
+
+
         // Check if there is an input redirection
         if (cmdLine->inputRedirect)
         {
@@ -196,12 +202,12 @@ void execute(cmdLine *cmdLine)
         }
     }
 
-    // Parent Process.. Wait for the child to finish pid>0
+    // Parent Process.. Wait for the child to finish ProcessID>0
     else
     {
         if (cmdLine->blocking)
         {
-            if (waitpid(pid, &stat_loc, 0) == -1)
+            if (waitpid(ProcessID, &stat_loc, 0) == -1)
             {
                 perror("Error during waitpid");
                 freeCmdLines(cmdLine);
@@ -212,10 +218,12 @@ void execute(cmdLine *cmdLine)
 }
 
 // Debug Mode Function - Looking for -d or -D
-void setDebugMode(const char *argv)
+int setDebugMode(const char *argv)
 {
     if (strcmp(argv, "-D") == 0 || strcmp(argv, "-d") == 0)
-        debug_mode = 1;
+        ++debug_mode;
+
+    return debug_mode;
 }
 
 // Convert String to Integer
