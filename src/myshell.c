@@ -9,236 +9,206 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include "LineParser.h"
 
-#include "LineParser.h" //As Said in the Instruction
-
-// Constants
 #define Max_String 2048
+
 int debug_mode = 0;
+FILE *outfile;
 
-// Function Declaration
 void execute(cmdLine *cmdLine);
-int setDebugMode(char *argv);
+void setDebugMode(int argc, char **argv);
 int stoierr(char *str);
+void handleExit(char *msg, int errKind, int toExit, int errCode, int exit_kind, cmdLine *cmdLine);
+void handleCWD();
+cmdLine *handleInputAndParse();
+int validCmdLine(cmdLine *cmdLine);
+int handleSpecialCommand(cmdLine *cmdLine);
+void handleSignalCommand(cmdLine *cmdLine);
+void handleRedirection(const char *filePath, int targetFd, int flags, cmdLine *pCmdLine);
 
-// Function Definition
-// Main Function
 int main(int argc, char **argv)
 {
-
-    char cwd[PATH_MAX];
-    char input[Max_String]; // Buffer
-
-    for (int i = 1; i < argc; i++)
-        if (setDebugMode(argv[i]))
-            break;
-    
-    
+    cmdLine *cmdLine;
+    setDebugMode(argc, argv);
 
     while (1)
     {
-        if (getcwd(cwd, sizeof(cwd)) == NULL)
-        {
-            perror("getcwd failed\n");
-            break;
-        }
-
-        printf("cwd: %s", cwd);
-
-        if (fgets(input, sizeof(input), stdin) == NULL)
-        {
-            perror("Error reading input\n");
-            break;
-        }
-
-        // Parse the input
-        cmdLine *cmdLine = parseCmdLines(input);
-
-        if (cmdLine == NULL)
-        {
-            if (feof(stdin))
-                exit(0);
-
-            perror("Error command that gets NULL");
+        handleCWD();
+        cmdLine = handleInputAndParse();
+        if (!validCmdLine(cmdLine) || !handleSpecialCommand(cmdLine))
             continue;
-        }
 
-        if (!cmdLine->argCount)
-        {
-            fprintf(stderr, "0 arguments given in the Command\n");
-            freeCmdLines(cmdLine);
-            continue;
-        }
-
-        if (strcmp(cmdLine->arguments[0], "quit") == 0)
-        {
-            freeCmdLines(cmdLine);
-            exit(0);
-        }
-
-        if (strcmp(cmdLine->arguments[0], "cd") == 0)
-        {
-            if (chdir(cmdLine->arguments[1]) == -1)
-            {
-                perror("Having trouble in changing the dir\n");
-            }
-
-            freeCmdLines(cmdLine);
-            continue;
-        }
-
-        // Alarm Command
-        else if (strcmp(cmdLine->arguments[0], "alarm") == 0)
-        {
-            // Check if the command has 2 arguments, if not print an error message and continue
-            if (cmdLine->argCount == 2)
-            {
-                int processID = stoierr(cmdLine->arguments[1]);
-
-                if (processID != -1)
-                {
-                    kill(processID, SIGCONT); // Send the signal to the process
-                }
-            }
-
-            else
-            {
-                fprintf(stderr, "Error in the number of arguments\n");
-            }
-        }
-
-        // Blast Command
-        else if (strcmp(cmdLine->arguments[0], "blast") == 0)
-        {
-
-            // Check if the command has 2 arguments, if not print an error message and continue
-            if (cmdLine->argCount == 2)
-            {
-                int processID = stoierr(cmdLine->arguments[1]);
-
-                if (processID != -1)
-                {
-                    kill(processID, SIGINT); // Send the signal to the process
-                }
-            }
-
-            else
-            {
-                fprintf(stderr, "Error in the number of arguments\n");
-            }
-        }
-
-        // Execute the command
-        else
-        {
-
-            execute(cmdLine);
-            // Free the memory
-            freeCmdLines(cmdLine);
-            cmdLine = NULL;
-        }
+        handleSignalCommand(cmdLine);
     }
-
     return 0;
 }
 
 // Execute the command
-void execute(cmdLine *cmdLine)
+void execute(cmdLine *pCmdLine)
 {
     int temp, stat_loc;
     int ProcessID = fork();
 
     if (ProcessID == -1)
-    {
-        perror("Error in Forking\n");
-        freeCmdLines(cmdLine);
-        _exit(EXIT_FAILURE); // Get out of the program
-    }
+        handleExit("Error in Forking: ", 1, 1, 1, 0, pCmdLine);
 
     // Child Process
     if (ProcessID == 0)
     {
-        // Debug Checker
         if (debug_mode)
-        {
-            fprintf(stderr, "PID: %d\n  Executing Command: %s\n\n", ProcessID, cmdLine->arguments[0]);
-        }
+            fprintf(stderr, "PID: %d\n  Executing Command: %s\n\n", ProcessID, pCmdLine->arguments[0]);
 
-
-        // Check if there is an input redirection
-        if (cmdLine->inputRedirect)
-        {
-            close(STDIN_FILENO);
-            temp = open(cmdLine->inputRedirect, O_RDONLY | O_CREAT, 0777);
-            // Check if the file is opened, if not print an error message and exit temp=-1
-            if (temp == -1)
-            {
-                perror("Error in opening the file\n");
-                freeCmdLines(cmdLine);
-                _exit(EXIT_FAILURE);
-            }
-        }
-
-        // Check if there is an output redirection
-        if (cmdLine->outputRedirect)
-        {
-            close(STDOUT_FILENO);
-            temp = open(cmdLine->outputRedirect, O_WRONLY | O_CREAT, 0777);
-            // Check if the file is opened, if not print an error message and exit b=-1
-            if (temp == -1)
-            {
-                perror("Error in opening the file\n");
-                freeCmdLines(cmdLine);
-                _exit(EXIT_FAILURE);
-            }
-        }
+        // Handle redirections
+        handleRedirection(pCmdLine->inputRedirect, STDIN_FILENO, O_RDONLY | O_CREAT, pCmdLine);
+        handleRedirection(pCmdLine->outputRedirect, STDOUT_FILENO, O_WRONLY | O_CREAT, pCmdLine);
 
         // Check if the command is executable
-        if (execv(cmdLine->arguments[0], cmdLine->arguments) == -1)
-        {
-            perror("Error executing command");
-            freeCmdLines(cmdLine);
-            exit(EXIT_FAILURE);
-        }
+        if (execv(pCmdLine->arguments[0], pCmdLine->arguments) == -1)
+            handleExit("Error in executing the command", 1, 1, EXIT_FAILURE, 0, pCmdLine);
     }
 
     // Parent Process.. Wait for the child to finish ProcessID>0
-    else
-    {
-        if (cmdLine->blocking)
-        {
-            if (waitpid(ProcessID, &stat_loc, 0) == -1)
-            {
-                perror("Error during waitpid");
-                freeCmdLines(cmdLine);
-                exit(EXIT_FAILURE);
-            }
-        }
-    }
+    else if (pCmdLine->blocking && waitpid(ProcessID, &stat_loc, 0) == -1)
+        handleExit("Error in waiting for the child process", 1, 0, 0, 0, pCmdLine);
 }
 
 // Debug Mode Function - Looking for -d or -D
-int setDebugMode(char *argv)
+void setDebugMode(int argc, char **argv)
 {
-    if (strcmp(argv, "-D") == 0 || strcmp(argv, "-d") == 0)
-        ++debug_mode;
+    for (int i = 1; i < argc; i++)
+        if ((strcmp(argv[i], "-D") || !strcmp(argv[i], "-d")) && !debug_mode)
+            debug_mode = 1;
 
-    return debug_mode;
+    outfile = debug_mode ? stderr : stdout;
 }
 
 // Convert String to Integer
 int stoierr(char *str)
 {
     int val;
-    // Convert the string to integer and entering him into val
-    sscanf(str, "%d", &val);
-
     // Check if the conversion was successful, if not print an error message and exit
-    if (val == 0)
-    {
-        fprintf(stderr, "Error in converting string to integer\n");
-        exit(EXIT_FAILURE); // return -1;
-    }
+    if (!sscanf(str, "%d", &val))
+        handleExit("Error in converting string to integer", 1, 1, EXIT_FAILURE, 1, NULL);
 
     return val;
 }
+
+/**
+
+ *  Handle Exit Function
+ *
+ *  msg - Error Message
+ *  errKind - Error Kind (1 for perror, 0 for fprintf)
+ *  toExit - Exit the program or not
+ *  errCode - Error Code
+ *  cmdLine - Command Line to free
+ *  exit_kind - 0 for _exit, 1 for exit
+*/
+void handleExit(char *msg, int errKind, int toExit, int errCode, int exit_kind, cmdLine *cmdLine)
+{
+    if (msg != NULL)
+        if (errKind)
+            perror(msg);
+        else
+            fprintf(stderr, "%s\n", msg);
+
+    if (cmdLine)
+        freeCmdLines(cmdLine);
+
+    if (toExit)
+        if (exit_kind)
+            exit(errCode);
+        else
+            _exit(errCode);
+}
+
+// Handle the Current Working Directory
+void handleCWD()
+{
+    char cwd[PATH_MAX];
+    if (!getcwd(cwd, sizeof(cwd)))
+        handleExit("getcwd failed", 1, 1, 1, 1, NULL);
+
+    printf("$%s> ", cwd);
+}
+
+// Handle the Input and Parse it
+cmdLine *handleInputAndParse()
+{
+    char input[Max_String]; // Buffer
+    if (!fgets(input, sizeof(input), stdin))
+        handleExit("fgets failed", 1, EXIT_FAILURE, EXIT_FAILURE, 1, NULL);
+
+    return parseCmdLines(input); // Parse the input
+}
+
+// Check if the Command Line is Valid
+int validCmdLine(cmdLine *cmdLine)
+{
+    if (!cmdLine)
+    {
+        if (feof(stdin))
+            exit(0);
+
+        fprintf(stderr, "Error: got null command\n");
+        return 0;
+    }
+
+    if (!cmdLine->argCount)
+        handleExit("NO given arguments in the Command", 0, 0, 0, 1, cmdLine);
+
+    return 1;
+}
+
+/**
+ * Handle Special Commands
+ * return 0 if should continue, 1 if ok
+ */
+int handleSpecialCommand(cmdLine *cmdLine)
+{
+    if (strcmp(cmdLine->arguments[0], "quit") == 0)
+        handleExit(NULL, 0, 1, 0, 1, cmdLine);
+
+    if (strcmp(cmdLine->arguments[0], "cd") == 0)
+    {
+        if (chdir(cmdLine->arguments[1]) == -1)
+            fprintf(stderr, "Error in changing the directory");
+
+        freeCmdLines(cmdLine);
+        return 0;
+    }
+    return 1;
+}
+
+void handleSignalCommand(cmdLine *cmdLine)
+{
+    int cmdNo = 0;
+    int processID;
+
+    if (!strcmp(cmdLine->arguments[0], "stop"))
+        cmdNo = SIGSTOP;
+    else if (!strcmp(cmdLine->arguments[0], "wake"))
+        cmdNo = SIGCONT;
+    else if (!strcmp(cmdLine->arguments[0], "term"))
+        cmdNo = SIGINT;
+
+    else // not a special command
+    {
+        execute(cmdLine);
+        freeCmdLines(cmdLine);
+        cmdLine = NULL;
+    }
+
+    if (cmdNo) // a special command
+        if (cmdLine->argCount == 2)
+        {
+            processID = stoierr(cmdLine->arguments[1]);
+            if (processID != -1)
+                kill(processID, cmdNo);
+        }
+        else
+            fprintf(stderr, "Error in the number of arguments\n");
+}
+
+void handleRedirection(const char *filePath, int targetFd, int flags, cmdLine *pCmdLine)
