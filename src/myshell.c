@@ -64,7 +64,7 @@ void execute(cmdLine *pCmdLine)
         handleRedirection(pCmdLine->outputRedirect, STDOUT_FILENO, O_WRONLY | O_CREAT, pCmdLine);
 
         // Check if the command is executable
-        if (execv(pCmdLine->arguments[0], pCmdLine->arguments) == -1)
+        if (execvp(pCmdLine->arguments[0], pCmdLine->arguments) == -1)
             handleExit("Error in executing the command", 1, 1, EXIT_FAILURE, 0, pCmdLine);
     }
 
@@ -130,6 +130,7 @@ void handleCWD()
     if (!getcwd(cwd, sizeof(cwd)))
         handleExit("getcwd failed", 1, 1, 1, 1, NULL);
 
+    sleep(1);
     printf("$%s> ", cwd);
 }
 
@@ -198,6 +199,7 @@ void handleSignalCommand(cmdLine *cmdLine)
         execute(cmdLine);
         freeCmdLines(cmdLine);
         cmdLine = NULL;
+        return;
     }
 
     if (cmdNo) // a special command
@@ -209,6 +211,16 @@ void handleSignalCommand(cmdLine *cmdLine)
         }
         else
             fprintf(stderr, "Error in the number of arguments\n");
+    // else
+    //     printf("Error in the command\n");
 }
 
 void handleRedirection(const char *filePath, int targetFd, int flags, cmdLine *pCmdLine)
+{
+    if (filePath)
+    {
+        close(targetFd);
+        if (open(filePath, flags, 0777) == -1)
+            handleExit("Error in opening the file", 1, 1, EXIT_FAILURE, 0, pCmdLine);
+    }
+}
